@@ -1,8 +1,9 @@
-#ifndef __MGUTILITY_TASK_INL_H__
-#define __MGUTILITY_TASK_INL_H__
+#ifndef MGUTILITY_TASK_INL_HPP
+#define MGUTILITY_TASK_INL_HPP
 
 #include <atomic>
 #include <exception>
+#include <future>
 #include <mutex>
 #include <system_error>
 
@@ -38,7 +39,8 @@ struct task<T, Tag, Lockable>::task_impl
         {
             promise_.set_exception(std::current_exception());
         }
-        clear_func_and_run_continuation();
+        reset();
+        run_continuation();
     }
 
     auto get_future() -> future_type& { return future_; }
@@ -53,12 +55,24 @@ struct task<T, Tag, Lockable>::task_impl
     auto cancel() -> bool
     {
         if (!is_pending())
+        {
+            cancel_continuation();
             return false;
+        }
         reset();
         promise_.set_exception(std::make_exception_ptr(
             std::system_error{std::make_error_code(std::errc::operation_canceled), func_.target_type().name()}));
-        clear_func_and_run_continuation();
+        run_continuation();
         return true;
+    }
+    auto cancel_continuation() -> void
+    {
+        std::lock_guard<lockable_type> guard(cancel_continuation_mutex_);
+        if (cancel_continuation_)
+        {
+            cancel_continuation_();
+            cancel_continuation_ = nullptr;
+        }
     }
     auto reset() -> void
     {
@@ -66,13 +80,20 @@ struct task<T, Tag, Lockable>::task_impl
         std::lock_guard<lockable_type> guard(func_mutex_);
         func_ = nullptr;
     }
-    auto set_continuation(const std::function<void()>& continuation_func) -> void { continuation_ = continuation_func; }
+    auto set_continuation(const std::function<void()>& continuation_func) -> void
+    {
+        std::lock_guard<lockable_type> guard(continuation_mutex_);
+        continuation_ = continuation_func;
+    }
+    auto set_cancel_continuation(const std::function<void()>& cancel_continuation_func) -> void
+    {
+        std::lock_guard<lockable_type> guard(cancel_continuation_mutex_);
+        cancel_continuation_ = cancel_continuation_func;
+    }
 
 private:
-    auto clear_func_and_run_continuation() -> void
+    auto run_continuation() -> void
     {
-        reset();
-
         std::lock_guard<lockable_type> guard(continuation_mutex_);
         if (continuation_)
         {
@@ -88,6 +109,8 @@ private:
     future_type future_;
     mutable lockable_type continuation_mutex_;
     std::function<void()> continuation_;
+    mutable lockable_type cancel_continuation_mutex_;
+    std::function<void()> cancel_continuation_;
 };
 
 // --- task<T, Tag, Lockable> member functions ---
@@ -97,7 +120,7 @@ task<T, Tag, Lockable>::task() = default;
 
 template <typename T, typename Tag, typename Lockable>
 task<T, Tag, Lockable>::task(const function_type& func)
-    : cancel_at_exit_{true}, impl_(std::make_shared<task_impl>(func))
+    : cancel_at_exit_{false}, impl_(std::make_shared<task_impl>(func))
 {
 }
 
@@ -128,10 +151,16 @@ auto task<T, Tag, Lockable>::operator=(task&& other) noexcept -> task&
 }
 
 template <typename T, typename Tag, typename Lockable>
-task<T, Tag, Lockable>::~task()
+task<T, Tag, Lockable>::~task() noexcept
 {
-    if (cancel_at_exit_)
-        cancel();
+    try
+    {
+        if (cancel_at_exit_)
+            cancel();
+    }
+    catch (...)
+    {
+    }
 }
 
 template <typename T, typename Tag, typename Lockable>
@@ -192,23 +221,23 @@ task<T, Tag, Lockable>::invoker::invoker(std::shared_ptr<task_impl> impl) noexce
 }
 
 template <typename T, typename Tag, typename Lockable>
-auto task<T, Tag, Lockable>::invoker::operator()() -> void
+auto task<T, Tag, Lockable>::invoker::operator()() const -> void
 {
     if (impl_)
         impl_->invoke();
 }
 
 template <typename T, typename Tag, typename Lockable>
-auto task<T, Tag, Lockable>::get_invoker() -> invoker
+auto task<T, Tag, Lockable>::get_invoker() const -> invoker
 {
-    return invoker{*this};
+    return invoker{impl_};
 }
 
 // --- then/then_impl ---
 
 template <typename T, typename Tag, typename Lockable>
 template <typename Func, typename U>
-auto task<T, Tag, Lockable>::then(Func continuation)
+auto task<T, Tag, Lockable>::then(Func continuation) const
     -> detail::enable_if_t<!detail::is_void<U>::value, task<detail::invoke_result_t<Func, std::shared_future<T>>>>
 {
     using future_type = std::shared_future<T>;
@@ -218,7 +247,7 @@ auto task<T, Tag, Lockable>::then(Func continuation)
 
 template <typename T, typename Tag, typename Lockable>
 template <typename Func, typename U>
-auto task<T, Tag, Lockable>::then(Func continuation)
+auto task<T, Tag, Lockable>::then(Func continuation) const
     -> detail::enable_if_t<detail::is_void<U>::value, task<detail::invoke_result_t<Func, std::shared_future<void>>>>
 {
     using future_type = std::shared_future<void>;
@@ -243,7 +272,7 @@ call_continuation(Func& continuation, FutureType& prev_future)
 
 template <typename T, typename Tag, typename Lockable>
 template <typename Func, typename FutureType, typename ReturnType>
-auto task<T, Tag, Lockable>::then_impl(Func continuation) -> task<ReturnType>
+auto task<T, Tag, Lockable>::then_impl(Func continuation) const -> task<ReturnType>
 {
     using next_task_t = task<ReturnType>;
 
@@ -252,12 +281,15 @@ auto task<T, Tag, Lockable>::then_impl(Func continuation) -> task<ReturnType>
 
     auto prev_future = this->get_future();
 
-    next_task_t next_task([prev_future, continuation]() mutable -> ReturnType
+    next_task_t next_task([prev_future, continuation]
                           { return call_continuation<ReturnType>(continuation, prev_future); });
+
+    auto next_task_impl = next_task.impl_;
 
     auto next_invoker = next_task.get_invoker();
 
-    impl_->set_continuation([next_invoker]() mutable -> void { next_invoker(); });
+    impl_->set_continuation([next_invoker] { next_invoker(); });
+    impl_->set_cancel_continuation([next_task_impl] { next_task_impl->cancel(); });
 
     if (!impl_->is_pending() && get_future().valid())
         next_task.impl_->invoke();
@@ -284,4 +316,4 @@ void task<T, Tag, Lockable>::run_impl(std::function<void()>& func, std::promise<
 }
 
 } // namespace mgutility
-#endif // __MGUTILITY_TASK_INL_H__
+#endif // MGUTILITY_TASK_INL_HPP
