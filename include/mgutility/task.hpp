@@ -267,6 +267,13 @@ private:
     std::shared_ptr<task_impl> impl_; ///< Shared implementation pointer.
 };
 
+template <typename F>
+auto make_task(F&& func) -> task<typename std::invoke_result<F>::type>
+{
+    using ReturnType = typename std::invoke_result<F>::type;
+    return task<ReturnType>(std::forward<F>(func));
+}
+
 } // namespace mgutility
 
 #include "task-inl.hpp"

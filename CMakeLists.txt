@@ -6,6 +6,7 @@ project(
   LANGUAGES CXX)
 
 option(TASK_NO_INSTALL "Skip installation of task" OFF)
+option(TASK_BUILD_EXAMPLES "Build examples" OFF)
 
 # Define the library
 add_library(task INTERFACE)
@@ -48,6 +49,14 @@ configure_package_config_file(
   ${CMAKE_CURRENT_LIST_DIR}/cmake/taskConfig.cmake.in
   "${CMAKE_CURRENT_BINARY_DIR}/taskConfig.cmake"
   INSTALL_DESTINATION lib/cmake/task)
+
+if(TASK_BUILD_EXAMPLES)
+  message(STATUS "Building examples")
+  add_subdirectory(examples)
+else()
+  message(STATUS "Skipping examples build")
+endif(TASK_BUILD_EXAMPLES)
+
 
 if(NOT ${task_NO_INSTALL})
   # Install the library
