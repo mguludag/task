@@ -11,6 +11,59 @@ A generic, header-only C++ task wrapper that supports cancellation, continuation
 - **Explicit invocation**: Control when tasks start via an invoker object.
 - **Header-only**: Just include the headers, no linking required.
 
+## State Diagram
+```mermaid
+stateDiagram-v2
+  [*] --> Pending : Task constructed
+
+  Pending --> Running : invoke()
+  Pending --> Canceled(without_continuation) : cancel()(no continuation)
+  Pending --> Canceled(with_continuation) : cancel()+ ContiunationCancel
+
+  Running --> Completed : run_impl() success
+  Running --> Failed : run_impl() throws
+
+  Completed --> ContiunationRunning : HasContiunation
+  Completed --> [*] : no continuation
+
+  Failed --> ContiunationRunning : HasContiunation
+  Failed --> [*] : no continuation
+
+  Running --> CancelRequested : Task is still running
+
+  Canceled(without_continuation) --> [*]
+  Canceled(with_continuation) --> ContiunationCanceled : ContiunationCancel requested
+  ContiunationCanceled --> [*]
+
+  CancelRequested --> ContiunationCanceled : ContiunationCancel requested (e.g. continuation might be pending)
+  CancelRequested --> ContiunationRunning : continuation running
+  CancelRequested --> [*] : Task will finish without cancel
+
+  note right of Pending
+    Task is initialized but not yet invoked
+  end note
+
+  note right of Running
+    Task is actively executing
+  end note
+
+  note right of Canceled(with_continuation)
+    cancel() cancels task and also cancels continuation
+  end note
+
+  note right of CancelRequested
+    cancel() called while task is running=> task not canceled but continuation cancelation may occur
+  end note
+
+  note right of ContiunationCanceled
+    ContiunationCancel() invoked(e.g. cancels chained task)
+  end note
+
+  note right of ContiunationRunning
+    continuation() invoked after tasksuccess/failure
+  end note
+```
+
 ## Getting Started
 
 ### Installation
