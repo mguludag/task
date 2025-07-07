@@ -36,6 +36,7 @@ struct task<T, Tag, Lockable>::task_impl {
   using function_type = std::function<T()>;
   using promise_type = std::promise<T>;
   using future_type = std::shared_future<T>;
+  using lockable_type = Lockable;
 
   explicit task_impl(const function_type &f) noexcept
       : func_(f), future_(promise_.get_future().share()) {}
