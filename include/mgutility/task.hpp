@@ -289,10 +289,23 @@ private:
   std::shared_ptr<task_impl> impl_; ///< Shared implementation pointer.
 };
 
-template <typename F>
-auto make_task(F &&func) -> task<typename std::invoke_result<F>::type> {
+/**
+ * @brief Create a task from a callable function.
+ *
+ * This function wraps a callable into a `task` object, allowing it to be
+ * executed asynchronously. The task can be invoked using an invoker or
+ * scheduled on an executor.
+ *
+ * @tparam Tag An optional tag type for the task (default: void).
+ * @tparam Lockable The lockable type used for synchronization (default: std::mutex).
+ * @tparam F The callable type (function, lambda, etc.).
+ * @param func The callable to wrap.
+ * @return A task object representing the callable.
+ */
+template <typename Tag = void, typename Lockable = std::mutex, typename F>
+auto make_task(F &&func) -> task<typename std::invoke_result<F>::type, Tag, Lockable> {
   using ReturnType = typename std::invoke_result<F>::type;
-  return task<ReturnType>(std::forward<F>(func));
+  return task<ReturnType, Tag, Lockable>(std::forward<F>(func));
 }
 
 } // namespace mgutility
