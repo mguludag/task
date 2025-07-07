@@ -1,18 +1,18 @@
 /*
  * MIT License
- * 
+ *
  * Copyright (c) 2024 mguludag
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- * 
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -297,16 +297,34 @@ private:
  * scheduled on an executor.
  *
  * @tparam Tag An optional tag type for the task (default: void).
- * @tparam Lockable The lockable type used for synchronization (default: std::mutex).
+ * @tparam Lockable The lockable type used for synchronization (default:
+ * std::mutex).
  * @tparam F The callable type (function, lambda, etc.).
  * @param func The callable to wrap.
  * @return A task object representing the callable.
  */
 template <typename Tag = void, typename Lockable = std::mutex, typename F>
-auto make_task(F &&func) -> task<typename std::invoke_result<F>::type, Tag, Lockable> {
-  using ReturnType = typename std::invoke_result<F>::type;
-  return task<ReturnType, Tag, Lockable>(std::forward<F>(func));
+auto make_task(F &&func) -> task<detail::invoke_result_t<F>, Tag, Lockable> {
+  return task<detail::invoke_result_t<F>, Tag, Lockable>(std::forward<F>(func));
 }
+
+#if MGUTILITY_CPLUSPLUS >= 201703L
+/**
+ * @brief Create a task from a callable function with optional tag and lockable.
+ *
+ * This function is a convenience overload that allows specifying a tag and
+ * lockable type for the task.
+ *
+ * @tparam Tag An optional tag type for the task (default: void).
+ * @tparam Lockable The lockable type used for synchronization (default:
+ * std::mutex).
+ * @tparam F The callable type (function, lambda, etc.).
+ * @param func The callable to wrap.
+ * @return A task object representing the callable.
+ */
+template <typename Tag = void, typename Lockable = std::mutex, typename F>
+task(F &&func) -> task<detail::invoke_result_t<F>, Tag, Lockable>;
+#endif // MGUTILITY_CPLUSPLUS >= 201703L
 
 } // namespace mgutility
 
