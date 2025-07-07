@@ -6,11 +6,9 @@
 #include <memory>
 #include <type_traits>
 
-namespace mgutility
-{
+namespace mgutility {
 
-namespace detail
-{
+namespace detail {
 #ifdef _MSC_VER
 #ifndef MGUTILITY_CPLUSPLUS
 #define MGUTILITY_CPLUSPLUS _MSVC_LANG
@@ -32,8 +30,7 @@ template <typename F, typename... Args>
 using invoke_result_t = typename std::invoke_result<F, Args...>::type;
 #endif
 
-template <typename T>
-using is_void = std::is_same<T, void>;
+template <typename T> using is_void = std::is_same<T, void>;
 } // namespace detail
 
 /**
@@ -81,197 +78,197 @@ using is_void = std::is_same<T, void>;
  * @endcode
  */
 template <typename T, typename Tag = void, typename Lockable = std::mutex>
-class task
-{
-    struct task_impl;
-    template <typename T_, typename Tag_, typename Lockable_>
-    friend class task;
+class task {
+  struct task_impl;
+  template <typename T_, typename Tag_, typename Lockable_> friend class task;
 
 public:
-    /// The result type of the task.
-    using value_type = T;
-    /// The tag type for distinguishing tasks.
-    using tag_type = Tag;
-    /// The lockable type used for synchronization (default: std::mutex).
-    using lockable_type = Lockable;
-    /// The function type executed by the task.
-    using function_type = std::function<T()>;
-    /// The shared future type for result access.
-    using future_type = std::shared_future<T>;
+  /// The result type of the task.
+  using value_type = T;
+  /// The tag type for distinguishing tasks.
+  using tag_type = Tag;
+  /// The lockable type used for synchronization (default: std::mutex).
+  using lockable_type = Lockable;
+  /// The function type executed by the task.
+  using function_type = std::function<T()>;
+  /// The shared future type for result access.
+  using future_type = std::shared_future<T>;
 
+  /**
+   * @brief Default-construct an empty task.
+   *
+   * The task will be invalid until assigned or constructed with a function.
+   */
+  task();
+
+  /**
+   * @brief Construct a task from a function.
+   * @param func The function to execute asynchronously.
+   *
+   * The function will be executed when the task is invoked.
+   */
+  explicit task(const function_type &func);
+
+  /**
+   * @brief Copy-construct a task (shares the same state).
+   * @param other The task to copy from.
+   */
+  task(const task &other) noexcept;
+
+  /**
+   * @brief Copy-assign a task (shares the same state).
+   * @param other The task to copy from.
+   * @return Reference to this task.
+   */
+  auto operator=(const task &other) noexcept -> task &;
+
+  /**
+   * @brief Move-construct a task.
+   * @param other The task to move from.
+   */
+  task(task &&other) noexcept;
+
+  /**
+   * @brief Move-assign a task.
+   * @param other The task to move from.
+   * @return Reference to this task.
+   */
+  auto operator=(task &&other) noexcept -> task &;
+
+  /**
+   * @brief Destructor. Cancels the task if not yet executed.
+   */
+  ~task() noexcept;
+
+  /**
+   * @brief Cancel the task if it is pending.
+   * @return true if the task was cancelled, false otherwise.
+   *
+   * If the task is pending, it will be cancelled and any waiting continuations
+   * will receive an exception.
+   */
+  auto cancel() const -> bool;
+
+  /**
+   * @brief Get the shared future associated with the task.
+   * @throws std::runtime_error if the task is not initialized.
+   * @return The shared future for the task's result.
+   */
+  auto get_future() const -> future_type;
+
+  /**
+   * @brief Wait for the task to complete.
+   */
+  auto wait() const -> void;
+
+  /**
+   * @brief Get the result of the task (waits if necessary).
+   * @return The result value.
+   */
+  auto get() const -> T;
+
+  /**
+   * @brief Wait for the task to complete for a given duration.
+   * @param duration The maximum duration to wait.
+   * @return The status of the wait operation.
+   */
+  template <typename Rep, typename Period>
+  auto wait_for(const std::chrono::duration<Rep, Period> &duration) const
+      -> std::future_status;
+
+  /**
+   * @brief Check if the task is pending execution.
+   * @return true if pending, false otherwise.
+   */
+  auto is_pending() const -> bool;
+
+  /**
+   * @brief Check if the task is valid (initialized).
+   * @return true if valid, false otherwise.
+   */
+  auto is_valid() const -> bool;
+
+  /**
+   * @brief Invoker for a task, allowing explicit invocation.
+   *
+   * The invoker holds a reference to the task's implementation and can be
+   * called to execute the task's function. This is useful for explicit control
+   * over when the task starts.
+   */
+  struct invoker {
     /**
-     * @brief Default-construct an empty task.
-     *
-     * The task will be invalid until assigned or constructed with a function.
+     * @brief Construct an invoker from a task.
+     * @param t The task to invoke.
      */
-    task();
-
+    explicit invoker(task &t) noexcept;
     /**
-     * @brief Construct a task from a function.
-     * @param func The function to execute asynchronously.
-     *
-     * The function will be executed when the task is invoked.
+     * @brief Construct an invoker from a shared implementation.
+     * @param impl The shared implementation pointer.
      */
-    explicit task(const function_type& func);
-
+    explicit invoker(std::shared_ptr<task_impl> impl) noexcept;
     /**
-     * @brief Copy-construct a task (shares the same state).
-     * @param other The task to copy from.
+     * @brief Invoke the task's function if it is pending.
      */
-    task(const task& other) noexcept;
+    auto operator()() const -> void;
 
-    /**
-     * @brief Copy-assign a task (shares the same state).
-     * @param other The task to copy from.
-     * @return Reference to this task.
-     */
-    auto operator=(const task& other) noexcept -> task&;
+  private:
+    std::shared_ptr<task_impl> impl_;
+  };
 
-    /**
-     * @brief Move-construct a task.
-     * @param other The task to move from.
-     */
-    task(task&& other) noexcept;
+  /**
+   * @brief Get an invoker for this task.
+   * @return An invoker object.
+   */
+  auto get_invoker() const -> invoker;
 
-    /**
-     * @brief Move-assign a task.
-     * @param other The task to move from.
-     * @return Reference to this task.
-     */
-    auto operator=(task&& other) noexcept -> task&;
+  /**
+   * @brief Attach a continuation to this task (for non-void result).
+   *
+   * The continuation receives the shared future of this task and returns a new
+   * value. The returned task represents the continuation.
+   *
+   * @tparam Func The continuation function type.
+   * @return A new task representing the continuation.
+   */
+  template <typename Func, typename U = T>
+  auto then(Func continuation) const -> detail::enable_if_t<
+      !detail::is_void<U>::value,
+      task<detail::invoke_result_t<Func, std::shared_future<T>>>>;
 
-    /**
-     * @brief Destructor. Cancels the task if not yet executed.
-     */
-    ~task() noexcept;
-
-    /**
-     * @brief Cancel the task if it is pending.
-     * @return true if the task was cancelled, false otherwise.
-     *
-     * If the task is pending, it will be cancelled and any waiting continuations
-     * will receive an exception.
-     */
-    auto cancel() const -> bool;
-
-    /**
-     * @brief Get the shared future associated with the task.
-     * @throws std::runtime_error if the task is not initialized.
-     * @return The shared future for the task's result.
-     */
-    auto get_future() const -> future_type;
-
-    /**
-     * @brief Wait for the task to complete.
-     */
-    auto wait() const -> void;
-
-    /**
-     * @brief Get the result of the task (waits if necessary).
-     * @return The result value.
-     */
-    auto get() const -> T;
-
-    /**
-     * @brief Wait for the task to complete for a given duration.
-     * @param duration The maximum duration to wait.
-     * @return The status of the wait operation.
-     */
-    template <typename Rep, typename Period>
-    auto wait_for(const std::chrono::duration<Rep, Period>& duration) const -> std::future_status;
-
-    /**
-     * @brief Check if the task is pending execution.
-     * @return true if pending, false otherwise.
-     */
-    auto is_pending() const -> bool;
-
-    /**
-     * @brief Check if the task is valid (initialized).
-     * @return true if valid, false otherwise.
-     */
-    auto is_valid() const -> bool;
-
-    /**
-     * @brief Invoker for a task, allowing explicit invocation.
-     *
-     * The invoker holds a reference to the task's implementation and can be
-     * called to execute the task's function. This is useful for explicit control
-     * over when the task starts.
-     */
-    struct invoker
-    {
-        /**
-         * @brief Construct an invoker from a task.
-         * @param t The task to invoke.
-         */
-        explicit invoker(task& t) noexcept;
-        /**
-         * @brief Construct an invoker from a shared implementation.
-         * @param impl The shared implementation pointer.
-         */
-        explicit invoker(std::shared_ptr<task_impl> impl) noexcept;
-        /**
-         * @brief Invoke the task's function if it is pending.
-         */
-        auto operator()() const -> void;
-
-    private:
-        std::shared_ptr<task_impl> impl_;
-    };
-
-    /**
-     * @brief Get an invoker for this task.
-     * @return An invoker object.
-     */
-    auto get_invoker() const -> invoker;
-
-    /**
-     * @brief Attach a continuation to this task (for non-void result).
-     *
-     * The continuation receives the shared future of this task and returns a new
-     * value. The returned task represents the continuation.
-     *
-     * @tparam Func The continuation function type.
-     * @return A new task representing the continuation.
-     */
-    template <typename Func, typename U = T>
-    auto then(Func continuation) const
-        -> detail::enable_if_t<!detail::is_void<U>::value, task<detail::invoke_result_t<Func, std::shared_future<T>>>>;
-
-    /**
-     * @brief Attach a continuation to this task (for void result).
-     *
-     * The continuation receives the shared future of this task and returns a new
-     * value. The returned task represents the continuation.
-     *
-     * @tparam Func The continuation function type.
-     * @return A new task representing the continuation.
-     */
-    template <typename Func, typename U = T>
-    auto then(Func continuation) const
-        -> detail::enable_if_t<detail::is_void<U>::value,
-                               task<detail::invoke_result_t<Func, std::shared_future<void>>>>;
+  /**
+   * @brief Attach a continuation to this task (for void result).
+   *
+   * The continuation receives the shared future of this task and returns a new
+   * value. The returned task represents the continuation.
+   *
+   * @tparam Func The continuation function type.
+   * @return A new task representing the continuation.
+   */
+  template <typename Func, typename U = T>
+  auto then(Func continuation) const -> detail::enable_if_t<
+      detail::is_void<U>::value,
+      task<detail::invoke_result_t<Func, std::shared_future<void>>>>;
 
 private:
-    /// Internal implementation for then().
-    template <typename Func, typename FutureType, typename ReturnType>
-    auto then_impl(Func continuation) const -> task<ReturnType>;
+  /// Internal implementation for then().
+  template <typename Func, typename FutureType, typename ReturnType>
+  auto then_impl(Func continuation) const -> task<ReturnType>;
 
-    /// Helper to run a function and set the promise (non-void).
-    static void run_impl(std::function<void()>& func, std::promise<void>& promise);
-    template <typename U>
-    static void run_impl(std::function<U()>& func, std::promise<U>& promise);
+  /// Helper to run a function and set the promise (non-void).
+  static void run_impl(std::function<void()> &func,
+                       std::promise<void> &promise);
+  template <typename U>
+  static void run_impl(std::function<U()> &func, std::promise<U> &promise);
 
-    const bool cancel_at_exit_{true}; ///< Whether to cancel the task on destruction.
-    std::shared_ptr<task_impl> impl_; ///< Shared implementation pointer.
+  const bool cancel_at_exit_{
+      true}; ///< Whether to cancel the task on destruction.
+  std::shared_ptr<task_impl> impl_; ///< Shared implementation pointer.
 };
 
 template <typename F>
-auto make_task(F&& func) -> task<typename std::invoke_result<F>::type>
-{
-    using ReturnType = typename std::invoke_result<F>::type;
-    return task<ReturnType>(std::forward<F>(func));
+auto make_task(F &&func) -> task<typename std::invoke_result<F>::type> {
+  using ReturnType = typename std::invoke_result<F>::type;
+  return task<ReturnType>(std::forward<F>(func));
 }
 
 } // namespace mgutility

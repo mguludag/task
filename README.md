@@ -124,8 +124,8 @@ int main() {
 int main() {
   using mgutility::task;
 
-  asio::thread_pool pool(1);
-  std::cout << "Starting ASIO thread pool with 1 thread...\n";
+  asio::thread_pool pool(2);
+  std::cout << "Starting ASIO thread pool with 2 threads...\n";
 
   // Example 1: Simple task
   task<void> t1([] { std::cout << "[Task1] Hello from task 1!\n"; });
