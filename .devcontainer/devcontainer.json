@@ -47,7 +47,9 @@
 				"yuzuhakuon.vscode-cpp-project",
 				"ms-vscode.live-server",
 				"ms-python.python",
-				"cweijan.vscode-office"
+				"cweijan.vscode-office",
+				"redpredator8.cursor-oled-1600nits",
+				"MermaidChart.vscode-mermaid-chart"
 			],
 			"settings": {
 				"errorLens.disableLineComments": {
